@@ -1,0 +1,2 @@
+1. NumPy arrays are used instead of lists because they are more space/time efficient than lists, and have some matrix operations as part of the library.
+2. The ordering of the propagations of each tile T has the following ordering: (1,1) 1(,2) (1,3) (2,1) (2,2) ... (3,3). It is important to note that the rows and coloumns have the same ordering!
