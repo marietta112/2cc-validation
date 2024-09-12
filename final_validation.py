@@ -583,17 +583,6 @@ if __name__ == '__main__':
     assert mari_set - adri_set == set()
     assert adri_set - mari_set == set()
 
-    # Converting Adriana's numbers into my numbers
-    reverse_translated_transitions = validation.convert_num_transitions(adriana_edges, reverse_mapping)
-    comparison = validation.compare_automata_transitions(numbered_transitions, reverse_translated_transitions)
-
-    assert comparison == True
-
-    mari_set = set(numbered_transitions)
-    adri_set = set(reverse_translated_transitions)
-
-    assert mari_set - adri_set == set()
-    assert adri_set - mari_set == set()
 
     ####################################################################################################################
     #                                          Constructing the Automata                                               #
@@ -618,25 +607,18 @@ if __name__ == '__main__':
     for tile in tiles_dict.keys():
         start_transitions.append((start_vertex, tile, tile))
 
-    mapping.update({-1: -1})
-    conv_start_trans = validation.convert_num_transitions(start_transitions, mapping)
-
     numbered_transitions += start_transitions
-    reverse_translated_transitions += start_transitions
-    adriana_edges += conv_start_trans
 
     conv_final_states = []
     for final_state in final_states:
         conv_final_states.append(mapping[final_state])
 
-    conv_alphabet = []
-    for tile in aut_alphabet:
-        conv_alphabet.append(mapping[conv_alphabet])
+
     automata = dfa.DFA(
         start=start_vertex,
-        inputs=conv_alphabet,
-        label=lambda s: automata_helper.is_final_state(s, conv_final_states),
-        transition=lambda s, c: automata_helper.get_transition(s, c, adriana_edges),
+        inputs=aut_alphabet,
+        label=lambda s: automata_helper.is_final_state(s, final_states),
+        transition=lambda s, c: automata_helper.get_transition(s, c, numbered_transitions),
     )
 
     dfa_dict = dfa.dfa2dict(automata)
