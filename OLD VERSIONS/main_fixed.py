@@ -1,4 +1,5 @@
 import json
+import validation
 import numpy as np
 import dfa
 
@@ -23,8 +24,6 @@ def get_transition(state, letter, transitions):
     for transition in transitions:
         if transition[0] == state and transition[1] == letter:
             return transition[2]
-
-    return 100
 
 
 def find_dup(props, tiles_map):
@@ -134,7 +133,7 @@ if __name__ == '__main__':
     original_aut_transitions = []
 
     for triple in records:
-        if validation.already_exists(triple[0], special_matrices) and validation.already_exists(triple[2], special_matrices) and validation.already_exists(triple[1], special_matrices):
+        if validation.already_exists(triple[0], special_matrices) and validation.already_exists(triple[2], special_matrices)  and validation.already_exists(triple[1], special_matrices):
             if validation.already_exists(triple[1], prop_matrices):  # Check that B is a tile, since tiles form the alphabet
                 if validation.already_exists(triple[0], list(rels.values())):
                     idx1 = get_key(rels, triple[0])
@@ -169,17 +168,6 @@ if __name__ == '__main__':
     print("Number of transitions = ", len(aut_transitions))
     print("Number of elements in rels dict = ", len(rels.keys()))
     print("***********************************************************************************************************")
-
-    f = open("rels.txt", "a")
-    formatted_strings = []
-    for key, value in rels.items():
-        formatted_string = f"{key}:{value}"
-        formatted_strings.append(formatted_string)
-    string_dict = '\n'.join(formatted_strings) + '\n'
-    f.write(string_dict)
-    f.close()
-
-
     # What we hope to achieve as prop matrices
     test_dict = {0: np.array([[0, 0, 0, 0, 1, 1, 0, 1, 1],
                               [0, 0, 1, 0, 1, 1, 0, 1, 1],
@@ -620,23 +608,14 @@ if __name__ == '__main__':
 
     map = dict()  # relationship between my numbers and adriana's
     num_matches = 0
-    for mar_key, mar_value in rels.items():
-        for middle_key, adr_value in test_dict.items():
-            if np.array_equal(mar_value, adr_value):
+    for key, value in rels.items():
+        for key2, value2 in test_dict.items():
+            if np.array_equal(value, value2):
                 num_matches += 1
-                map.update({mar_key: middle_key})
+                map.update({key: key2})
                 continue
-    print("All of Marietta's prop matrices in rels found in Adriana's prop matrices in test_dict: ", num_matches == len(rels) and len(rels) == len(test_dict))
-
-    f = open("rels.txt", "a")
-    formatted_strings = []
-    for key, value in map.items():
-        formatted_string = f"{key}:{value}"
-        formatted_strings.append(formatted_string)
-    string_dict = '\n'.join(formatted_strings) + '\n'
-    f.write(string_dict)
-    f.close()
-
+    print("Are all of Marietta's prop matrices in rels found in Adriana's prop matrices in test_dict?", num_matches == len(rels) and len(rels) == len(test_dict))
+    assert len(rels) == len(test_dict)
     print("***********************************************************************************************************")
 
     # What we are hoping to achieve as automata transitions
@@ -655,46 +634,47 @@ if __name__ == '__main__':
             (45, 5, 16), (46, 5, 14), (47, 5, 34), (47, 7, 6), (48, 5, 29), (49, 5, 50), (50, 5, 49), (50, 7, 38)]
 
     print("Number of transitions in Adriana's automata = ", len(test))
-    print("Number of Adriana's transitions and Marietta's transitions agree: ", len(test) == len(original_aut_transitions))
     assert len(test) == len(original_aut_transitions)
 
+    start_vertex = len(rels.keys()) + 1  # Represents identity matrix
+    rels.update({start_vertex: np.identity(9)})  # Adding the identity matrix at the end of dict
+    aut_alph = set(tiles_dict.keys())  # Tiles as numbers from the dictionary
+
+    four_chrom_num = []
+    for array in result_non_col:
+        for key, value in rels.items():
+            if np.array_equal(value, array):
+                four_chrom_num.append(key)
+                continue
+
+    print("Number of final states = ", len(four_chrom_num))
+    assert len(four_chrom_num) == 27
+    print("***********************************************************************************************************")
 
     # Getting a new list of triples s.t. each element in the triple is a prop matrix instead of a number
     adri_conv_aut_trans = []
     for transition in test:
-        start_key = transition[0]
-        middle_key = transition[1]
-        end_key = transition[2]
-        adri_conv_aut_trans.append((test_dict[start_key], test_dict[middle_key], test_dict[end_key]))
+        key1 = transition[0]
+        key2 = transition[1]
+        key3 = transition[2]
+        adri_conv_aut_trans.append((test_dict[key1], test_dict[key2], test_dict[key3]))
 
-    matches = False
+    matches = 0
     for triple in adri_conv_aut_trans:
         for rec_triple in records:
             if are_triples_equal(triple, rec_triple):
-                matches = True
+                matches += 1
                 continue
-        if matches == False:
-            break
 
-    print("Adriana's triples are in records: ", matches != False)
+    print("How many triples from Adriana's list are in records? ", matches)
 
     check = 0
-    for mari_triple in original_aut_transitions:
-        for adr_triple in adri_conv_aut_trans:
-            if are_triples_equal(mari_triple, adr_triple):
+    for og_trans in original_aut_transitions:
+        for conv_triple in adri_conv_aut_trans:
+            if are_triples_equal(og_trans, conv_triple):
                 check += 1
                 continue
-    print("Marietta's raw automata transitions are all found in Adriana's automata transitions: ", check == len(original_aut_transitions))
-
-    check = 0
-    for mari_triple in original_aut_transitions:
-        for adr_triple in original_aut_transitions:
-            if are_triples_equal(mari_triple, adr_triple):
-                check += 1
-                continue
-
-    assert check == len(original_aut_transitions)
-
+    print("How many triples from Marietta's automata transitions are found in Adriana's automata transitions?", check)
 
     mari_num_trans = []
     for transition in original_aut_transitions:
@@ -708,43 +688,8 @@ if __name__ == '__main__':
     adri_aut_set = set(test)
 
     print("Are Marietta's transitions the same as Adriana's after Marietta's numbers are converted to Adriana's? ", mari_aut_set == adri_aut_set)
-
-    mari_num_trans_test = set(mari_num_trans)
-    og_num_trans = set(aut_transitions)
-
-
-    assert mari_num_trans_test == og_num_trans
-    assert set(conv_aut_trans) == adri_aut_set
-
-
-    new_aut_transitions = []
-    for triple in aut_transitions:
-        new_aut_transitions.append((map[triple[0]], map[triple[1]], map[triple[2]]))
-
-    sanity_check = 0
-    for triple in new_aut_transitions:
-        for adri_triple in test:
-            if are_triples_equal(triple, adri_triple):
-                sanity_check += 1
-                continue
-
-    assert sanity_check == len(aut_transitions)
     print("***********************************************************************************************************")
 
-    start_vertex = len(rels.keys()) + 1  # Represents identity matrix
-    rels.update({start_vertex: np.identity(9)})  # Adding the identity matrix at the end of dict
-    aut_alph = set(tiles_dict.keys())  # Tiles as numbers from the dictionary
-
-    four_chrom_num = []
-    for array in result_non_col:
-        for mar_key, mar_value in rels.items():
-            if np.array_equal(mar_value, array):
-                four_chrom_num.append(mar_key)
-                continue
-
-    print("Number of final states = ", len(four_chrom_num))
-    assert len(four_chrom_num) == 27
-    print("***********************************************************************************************************")
 
     start_transitions = []
     for tile in tiles_dict.keys():
@@ -753,12 +698,6 @@ if __name__ == '__main__':
     print(start_transitions)
     aut_transitions += start_transitions
     mari_num_trans += start_transitions
-    conv_aut_trans += start_transitions
-
-
-    sink_state = 100
-    print(mari_num_trans)
-    print(conv_aut_trans)
 
     automata = dfa.DFA(
         start=start_vertex,
@@ -768,17 +707,16 @@ if __name__ == '__main__':
     )
 
     dfa_dict = dfa.dfa2dict(automata)
-    # min_dfa = automata.minimize()
     print(dfa.dfa2dict(automata))
 
     print("Which numbers represent tiles?")
     # print(tiles_dict.keys())
     # tile - tile name map
     tile_map = dict()
-    for mar_key, matrix in tiles_dict.items():
+    for key, matrix in tiles_dict.items():
         for i in range(0, len(prop_matrices)):
             if np.array_equal(matrix, prop_matrices[i]):
-                tile_map.update({mar_key: tile_types[i]})
+                tile_map.update({key: tile_types[i]})
 
     print(tile_map)
 

@@ -245,19 +245,19 @@ def get_closure(og_props):
 
         # all_props = all_props + temp
         # new_props = temp.copy()
-        # print("Number of new matrices found = ", num_new)
+        print("Number of new matrices found = ", num_new)
         # print("Number of matrices total = ", len(all_props))
 
         props_tuple = set(tuple(array.flatten()) for array in temp)
-        # print("Number of unique original props in temp = ", len(props_tuple))
+        print("Number of unique original props in temp = ", len(props_tuple))
         props_arrays = [np.array(matrix).reshape(9, 9) for matrix in props_tuple]
         all_props = all_props + props_arrays
         new_props = props_arrays.copy()
-        # print("-------------------------------------------------------------------------------")
+        print("-------------------------------------------------------------------------------")
         i += 1
 
 
-    # print("Total number of prop matrices = ", len(all_props))
+    print("Total number of prop matrices = ", len(all_props))
     return all_props, records
 
 def check_diagonal(props):
@@ -276,6 +276,7 @@ def check_diagonal(props):
 
 def leads_to_zero_diag(records):
     leads_to_zero_diagonal = []
+    triples = []
 
     for triple in records:
         if np.all(np.diagonal(triple[2]) == 0):
@@ -286,81 +287,8 @@ def leads_to_zero_diag(records):
             if not already_exists(triple[2], leads_to_zero_diagonal):
                 leads_to_zero_diagonal.append(triple[2])
 
-    return leads_to_zero_diagonal
+            # triples.append((triple[2], triple[2], np.matmul(triple[2], triple[2]))) - this did not change the result!
+            triples.append(triple)
 
-def are_triples_equal(triple1, triple2):
-    return all(np.array_equal(a, b) for a, b in zip(triple1, triple2))
+    return leads_to_zero_diagonal, triples
 
-def generate_automata(special_matrices, prop_matrices, records):
-    tiles_dict = dict()
-    states = dict()  # Relate integer to prop matrix
-    idx = 0
-    original_aut_transitions = []
-
-    for triple in records:
-        if already_exists(triple[0], special_matrices) and already_exists(triple[2], special_matrices) and already_exists(triple[1], special_matrices):
-            if already_exists(triple[1], prop_matrices):  # Check that B is a tile, since tiles form the alphabet
-                if not already_exists(triple[0], list(states.values())):
-                    states.update({idx: triple[0]})
-                    idx += 1
-                if not already_exists(triple[1], list(states.values())):
-                    states.update({idx: triple[1]})
-                    idx += 1
-                if not already_exists(triple[1], list(tiles_dict.values())):
-                    tiles_dict.update({idx: triple[1]})
-                if not already_exists(triple[2], list(states.values())):
-                    states.update({idx: triple[2]})
-                    idx += 1
-
-                original_aut_transitions.append(triple)
-
-    return states, tiles_dict, original_aut_transitions
-
-
-def compare_dict_values(dict1, dict2):
-    # Check they have the same length
-    assert len(dict1) == len(dict2)
-
-    # Check if all values in dict1 are in dict2 using numpy array comparison
-    map = dict()
-    reverse_map = dict()
-    num_matches = 0
-    for key1, value1 in dict1.items():
-        for key2, value2 in dict2.items():
-            if np.array_equal(value1, value2):
-                num_matches += 1
-                map.update({key1: key2})
-                reverse_map.update({key2: key1})
-                continue
-
-    assert num_matches == len(dict1)
-    assert num_matches == len(dict2)
-
-    return map, reverse_map
-
-def get_key(my_dict, val):
-    for key, value in my_dict.items():
-        if np.array_equal(val, value):
-            return key
-
-    print("OQO!!")
-
-def convert_raw_transitions(raw_transitions, dict):
-    converted_transitions = []
-    for transition in raw_transitions:
-        converted_transitions.append((get_key(dict, transition[0]), get_key(dict, transition[1]), get_key(dict, transition[2])))
-
-    return converted_transitions
-
-def convert_num_transitions(numbered_transitions, mapping):
-    converted_transitions = []
-    for transition in numbered_transitions:
-        converted_transitions.append((mapping[transition[0]], mapping[transition[1]], mapping[transition[2]]))
-
-    return converted_transitions
-
-def compare_automata_transitions(trans1, trans2):
-    if set(trans1) == set(trans2):
-        return True
-    else:
-        return False

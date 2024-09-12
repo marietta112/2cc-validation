@@ -1,50 +1,17 @@
 import json
+import validation
 import numpy as np
 import dfa
+import automata_helper
 
-from automata.fa.dfa import DFA
-import validation
-
-
-def get_key(my_dict, val):
-    for key, value in my_dict.items():
-        if np.array_equal(val, value):
-            return key
-
-
-def is_final_state(state, final_states):
-    if state not in final_states:
-        return False
-    else:
-        return True
-
-
-def get_transition(state, letter, transitions):
-    for transition in transitions:
-        if transition[0] == state and transition[1] == letter:
-            return transition[2]
-
-    return 100
-
-
-def find_dup(props, tiles_map):
-    unique_props = []
-    for prop in props:
-        if not validation.already_exists(prop, unique_props):
-            unique_props.append(prop)
-
-
-def are_triples_equal(triple1, triple2):
-    return all(np.array_equal(a, b) for a, b in zip(triple1, triple2))
-
+from dfa.draw import write_dot
 
 if __name__ == '__main__':
 
-    # Opening JSON file
+    ####################################################################################################################
+    #                                      Opening JSON File with Tile Encodings                                       #
+    ####################################################################################################################
     f = open('new_info.json')
-
-    # returns JSON object as
-    # a dictionary
     info = json.load(f)
 
     tile_types = ['AAL', 'ABL', 'AVL', 'ADL', 'BAL', 'BBL', 'BVL', 'BDL', 'VAL', 'VBL', 'VVL',
@@ -53,33 +20,37 @@ if __name__ == '__main__':
                   'VDdL', 'DAdL', 'DBdL', 'DVdL', 'DDdL', 'AIBdL', 'AIVdL', 'BIAdL', 'VIAdL', 'HdL']
 
     num_tiles = len(tile_types)
-    assert len(tile_types) == num_tiles
+    assert num_tiles == 42
 
-    # Generate all propagation matrices
+    ####################################################################################################################
+    #                                  Extracting Propagation Matrices of Tiles                                        #
+    ####################################################################################################################
     prop_matrices = []
     tile_prop_dict = {}
-    j = 0
+
     for i in range(0, num_tiles):
         prop_matrix_i = validation.get_prop_matrix(info[tile_types[i]]['concrete propagations'])
         prop_matrices.append(prop_matrix_i)
         tile_prop_dict.update({tile_types[i]: prop_matrix_i})
 
-    props_tuple = set(tuple(array.flatten()) for array in prop_matrices)
-    check_unique_props = 38
-    print("Number of unique original props = ", len(props_tuple))
-    assert len(props_tuple) == check_unique_props
+    props_tuple = set(tuple(array.flatten()) for array in prop_matrices) # Find all unique propagation matrices
 
-    props_arrays = [np.array(matrix).reshape(9, 9) for matrix in
-                    props_tuple]  # All unique prop matrices relating to tiles
+    assert len(props_tuple) == 38
 
-    result, records = validation.get_closure(props_arrays)
-    check_num_props = 161
+    ####################################################################################################################
+    #                              Getting the Closure of the Prop Matrices of Tiles                                   #
+    ####################################################################################################################
 
-    props_tuple = set(tuple(array.flatten()) for array in result)
-    print("Number of unique original props from closure = ", len(props_tuple))
-    assert len(result) == check_num_props
-    print("Number of triples in records before removing duplicates = ", len(records))
+    unique_prop_matrices = [np.array(matrix).reshape(9, 9) for matrix in props_tuple]
+    closure, records = validation.get_closure(unique_prop_matrices)
 
+    check_num_closure = 161
+    assert len(closure) == check_num_closure
+
+    props_tuple = set(tuple(array.flatten()) for array in closure)
+    assert len(props_tuple) == len(closure)
+
+    # Removing duplicates from records
     records_set = set()
     for (A, B, C) in records:
         records_set.add(tuple(A.flatten()) + tuple(B.flatten()) + tuple(C.flatten()))
@@ -89,107 +60,63 @@ if __name__ == '__main__':
         B = np.array(item[81:162]).reshape(9, 9)
         C = np.array(item[162:243]).reshape(9, 9)
         records.append((A, B, C))
-    print("Number of triples in records after removing duplicates = ", len(records))
-    print("***********************************************************************************************************")
-    result_non_col = validation.check_diagonal(result)
-    check_non_col = 27
-    print("Number of prop matrices from closure not 3-col = ", len(result_non_col))
-    assert len(result_non_col) == check_non_col
-    print("***********************************************************************************************************")
 
-    # Calculating number of tiles that are not 3-colourable
+    assert len(records) == check_num_closure*check_num_closure
+
+    ####################################################################################################################
+    #                              Checking which Prop Matrices are not 3-colourable                                   #
+    ####################################################################################################################
+
+    non_3col_matrices = validation.check_diagonal(closure)
+    check_non_col = 27
+    assert len(non_3col_matrices) == check_non_col
+
     tiles_non_col = 0
     non_col_tiles = []
-    for matrix in result_non_col:
-        if validation.already_exists(matrix, props_arrays):
+    for matrix in non_3col_matrices:
+        if validation.already_exists(matrix, unique_prop_matrices):
             tiles_non_col += 1
-
             non_col_tiles.append(matrix)
-    check_tiles_ncol = 8
-    print("Number of tiles that are not 3-col = ", tiles_non_col)
-    assert tiles_non_col == check_tiles_ncol
+
+    assert tiles_non_col == 8
 
     non_col_tiles_names = []
     for matrix in non_col_tiles:
-        for i in range(0, len(prop_matrices)):
-            if np.array_equal(matrix, prop_matrices[i]):
-                non_col_tiles_names.append(tile_types[i])
-    print("The non-3-col tiles are: ", non_col_tiles_names)
-    print("***********************************************************************************************************")
+        for key, value in tile_prop_dict.items():
+            if np.array_equal(matrix, value):
+                non_col_tiles_names.append(key)
 
-    # Checking which prop matrices will eventually lead to a 4-chrom prop matrix
+    assert non_col_tiles_names == ['DDdL', 'BAL', 'ABL', 'VDL', 'AIVL', 'VIAL', 'AIVdL', 'VIAdL', 'DVL', 'VVL']
+
+    ####################################################################################################################
+    #                        Finding which Prop Matrices Lead to non-3-colourable Matrices                             #
+    ####################################################################################################################
+
     special_matrices = validation.leads_to_zero_diag(records)
-    print("Number of matrices that lead to non 3-col matrix = ", len(special_matrices))
-    # print("Number of triples of the form (A,B,C) s.t. A*B = C and C is 4-chromatic = ", len(triples))
-    print("***********************************************************************************************************")
+    assert len(special_matrices) == 51
 
     ####################################################################################################################
-    # Finding the transitions of the automata that accepts 4-chromatic sequences of tiles.                             #
+    #                                 Constructing States and Edges of Automaton                                       #
     ####################################################################################################################
 
-    aut_transitions = []
-    tiles_dict = dict()
-    rels = dict()  # Relate integer to prop matrix
-    idx = 0
-    original_aut_transitions = []
+    states, tiles_dict, original_aut_transitions = validation.generate_automata(special_matrices, unique_prop_matrices, records)
 
-    for triple in records:
-        if validation.already_exists(triple[0], special_matrices) and validation.already_exists(triple[2], special_matrices) and validation.already_exists(triple[1], special_matrices):
-            if validation.already_exists(triple[1], prop_matrices):  # Check that B is a tile, since tiles form the alphabet
-                if validation.already_exists(triple[0], list(rels.values())):
-                    idx1 = get_key(rels, triple[0])
-                else:
-                    idx1 = idx
-                    idx += 1
-                    rels.update({idx1: triple[0]})
-                if validation.already_exists(triple[1], list(rels.values())):
-                    idx2 = get_key(rels, triple[1])
-                else:
-                    idx2 = idx
-                    idx += 1
-                    rels.update({idx2: triple[1]})
-                    tiles_dict.update({idx2: triple[1]})
-                if validation.already_exists(triple[2], list(rels.values())):
-                    end_array_idx = get_key(rels, triple[2])
-                else:
-                    end_array_idx = idx
-                    idx += 1
-                    rels.update({end_array_idx: triple[2]})
-                aut_transitions.append((idx1, idx2, end_array_idx))
-                original_aut_transitions.append(triple)
+    ####################################################################################################################
+    #                                         Validating Automata Results                                              #
+    ####################################################################################################################
 
-    # checking if generated triples are actually in records
-    check_num_matches = 0
-    for gen_triple in original_aut_transitions:
-        for rec_triple in records:
-            if are_triples_equal(gen_triple, rec_triple):
-                check_num_matches += 1
-                continue
-    print("All generated triples are in records: ", check_num_matches == len(original_aut_transitions))
-    print("Number of transitions = ", len(aut_transitions))
-    print("Number of elements in rels dict = ", len(rels.keys()))
-    print("***********************************************************************************************************")
+    assert len(original_aut_transitions) == 105
+    assert len(states) == 51
 
-    f = open("rels.txt", "a")
-    formatted_strings = []
-    for key, value in rels.items():
-        formatted_string = f"{key}:{value}"
-        formatted_strings.append(formatted_string)
-    string_dict = '\n'.join(formatted_strings) + '\n'
-    f.write(string_dict)
-    f.close()
-
-
-    # What we hope to achieve as prop matrices
-    test_dict = {0: np.array([[0, 0, 0, 0, 1, 1, 0, 1, 1],
-                              [0, 0, 1, 0, 1, 1, 0, 1, 1],
-                              [0, 1, 0, 0, 1, 1, 0, 1, 1],
-                              [1, 0, 1, 0, 0, 1, 1, 0, 1],
-                              [1, 0, 1, 0, 0, 0, 1, 0, 1],
-                              [1, 0, 1, 1, 0, 0, 1, 0, 1],
-                              [1, 1, 0, 1, 1, 0, 0, 1, 0],
-                              [1, 1, 0, 1, 1, 0, 1, 0, 0],
-                              [1, 1, 0, 1, 1, 0, 0, 0, 0]]), 1: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+    adriana_states = {0: np.array([[0, 0, 0, 0, 1, 1, 0, 1, 1],
+                                   [0, 0, 1, 0, 1, 1, 0, 1, 1],
+                                   [0, 1, 0, 0, 1, 1, 0, 1, 1],
+                                   [1, 0, 1, 0, 0, 1, 1, 0, 1],
+                                   [1, 0, 1, 0, 0, 0, 1, 0, 1],
+                                   [1, 0, 1, 1, 0, 0, 1, 0, 1],
+                                   [1, 1, 0, 1, 1, 0, 0, 1, 0],
+                                   [1, 1, 0, 1, 1, 0, 1, 0, 0],
+                                   [1, 1, 0, 1, 1, 0, 0, 0, 0]]), 1: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                                                           [1, 0, 0, 1, 1, 1, 1, 1, 1],
                                                                           [1, 0, 0, 1, 1, 1, 1, 1, 1],
                                                                           [1, 1, 1, 0, 1, 0, 1, 1, 1],
@@ -198,7 +125,7 @@ if __name__ == '__main__':
                                                                           [1, 1, 1, 1, 1, 1, 0, 0, 1],
                                                                           [1, 1, 1, 1, 1, 1, 0, 0, 1],
                                                                           [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 2: np.array([[0, 1, 1, 0, 0, 1, 0, 1, 0],
+                      2: np.array([[0, 1, 1, 0, 0, 1, 0, 1, 0],
                               [0, 0, 0, 0, 1, 1, 0, 1, 1],
                               [0, 0, 0, 0, 1, 1, 0, 1, 1],
                               [1, 0, 1, 0, 0, 0, 1, 0, 1],
@@ -215,7 +142,7 @@ if __name__ == '__main__':
                                                                           [1, 1, 0, 1, 1, 0, 0, 1, 0],
                                                                           [1, 1, 0, 1, 1, 0, 1, 0, 0],
                                                                           [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 4: np.array([[0, 1, 1, 0, 1, 0, 0, 0, 1],
+                      4: np.array([[0, 1, 1, 0, 1, 0, 0, 0, 1],
                               [0, 0, 0, 0, 1, 1, 0, 1, 1],
                               [0, 0, 0, 0, 1, 1, 0, 1, 1],
                               [1, 0, 1, 0, 0, 0, 1, 0, 1],
@@ -232,7 +159,7 @@ if __name__ == '__main__':
                                                                           [1, 0, 0, 1, 0, 0, 0, 0, 0],
                                                                           [0, 1, 0, 0, 1, 0, 0, 0, 0],
                                                                           [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 6: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      6: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                               [1, 0, 1, 1, 1, 1, 1, 1, 1],
                               [1, 1, 0, 1, 1, 1, 1, 1, 1],
                               [1, 1, 1, 0, 1, 1, 1, 1, 1],
@@ -249,7 +176,7 @@ if __name__ == '__main__':
                                                                           [0, 1, 1, 0, 1, 1, 0, 0, 0],
                                                                           [1, 0, 1, 1, 0, 1, 0, 0, 0],
                                                                           [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 8: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
+                      8: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
                               [1, 0, 1, 1, 1, 1, 1, 1, 1],
                               [1, 1, 0, 1, 1, 1, 1, 1, 1],
                               [1, 1, 1, 0, 1, 1, 1, 1, 1],
@@ -266,7 +193,7 @@ if __name__ == '__main__':
                                                                           [1, 0, 0, 1, 1, 0, 0, 1, 0],
                                                                           [1, 1, 0, 0, 1, 0, 1, 0, 0],
                                                                           [1, 1, 0, 1, 1, 0, 0, 0, 0]]),
-                 10: np.array([[0, 0, 0, 1, 1, 1, 1, 1, 1],
+                      10: np.array([[0, 0, 0, 1, 1, 1, 1, 1, 1],
                                [1, 0, 1, 1, 0, 1, 1, 0, 1],
                                [1, 1, 0, 1, 1, 0, 1, 1, 0],
                                [0, 1, 1, 0, 1, 1, 0, 1, 1],
@@ -283,7 +210,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 0, 1, 1, 0, 0, 0, 0],
                                                                             [1, 1, 0, 1, 1, 0, 0, 0, 0],
                                                                             [1, 1, 0, 1, 1, 0, 1, 1, 0]]),
-                 12: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
+                      12: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
                                [1, 0, 0, 1, 1, 1, 1, 1, 1],
                                [1, 0, 0, 1, 1, 1, 1, 1, 1],
                                [1, 1, 1, 0, 1, 0, 1, 1, 1],
@@ -300,7 +227,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 1, 0, 0, 0, 0, 0],
                                                                             [0, 1, 0, 0, 1, 0, 0, 0, 0],
                                                                             [1, 1, 0, 1, 1, 0, 1, 1, 0]]),
-                 14: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      14: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 0, 0, 1, 1, 1, 0, 1, 1],
                                [1, 0, 0, 0, 1, 1, 1, 1, 1],
                                [1, 1, 1, 0, 1, 0, 1, 0, 1],
@@ -317,7 +244,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 1, 1, 1, 1, 0, 1, 0],
                                                                             [1, 1, 1, 1, 1, 1, 1, 0, 0],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 16: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      16: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 0, 0, 1, 1, 0, 1, 1, 0],
                                [1, 0, 0, 1, 0, 1, 1, 0, 1],
                                [1, 1, 0, 0, 1, 0, 1, 1, 0],
@@ -334,7 +261,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 1, 1, 0, 1, 0, 1, 0],
                                                                             [0, 1, 1, 1, 1, 1, 1, 0, 0],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 18: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      18: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 0, 1, 1, 0, 1, 0, 0, 0],
                                [1, 1, 0, 0, 0, 0, 1, 1, 0],
                                [0, 1, 1, 0, 1, 1, 0, 0, 0],
@@ -351,7 +278,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 0, 1, 1, 0, 0, 1, 0],
                                                                             [1, 1, 0, 1, 1, 0, 1, 0, 0],
                                                                             [1, 1, 0, 1, 1, 0, 1, 1, 0]]),
-                 20: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      20: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 0, 1, 1, 0, 0, 1, 0, 1],
                                [1, 1, 0, 1, 1, 0, 1, 0, 0],
                                [0, 1, 0, 0, 1, 1, 0, 1, 1],
@@ -368,7 +295,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 0, 1, 1, 1, 0, 1, 1],
                                                                             [1, 1, 1, 1, 1, 0, 1, 0, 1],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 22: np.array([[0, 1, 1, 1, 1, 1, 1, 1, 1],
+                      22: np.array([[0, 1, 1, 1, 1, 1, 1, 1, 1],
                                [0, 0, 1, 1, 1, 1, 1, 1, 0],
                                [0, 1, 0, 1, 0, 1, 1, 1, 1],
                                [1, 1, 1, 0, 0, 1, 1, 1, 0],
@@ -385,7 +312,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 1, 1, 1, 0, 1, 1],
                                                                             [1, 1, 1, 0, 1, 0, 1, 0, 1],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 24: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      24: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 0, 1, 0, 0, 1, 1, 0, 1],
                                [1, 1, 0, 1, 1, 0, 0, 1, 0],
                                [0, 0, 1, 0, 1, 1, 0, 1, 1],
@@ -402,7 +329,7 @@ if __name__ == '__main__':
                                                                             [0, 1, 1, 0, 1, 1, 0, 0, 1],
                                                                             [1, 0, 1, 1, 0, 1, 0, 0, 1],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 26: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      26: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 0, 1, 1, 0, 1, 0, 0, 1],
                                [1, 1, 0, 0, 1, 0, 1, 1, 0],
                                [0, 1, 1, 0, 1, 1, 0, 0, 1],
@@ -419,7 +346,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 0, 0, 0, 1, 0, 0],
                                                                             [0, 0, 0, 0, 1, 0, 0, 1, 0],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 28: np.array([[0, 1, 1, 0, 1, 0, 0, 0, 1],
+                      28: np.array([[0, 1, 1, 0, 1, 0, 0, 0, 1],
                                [0, 1, 0, 0, 1, 1, 0, 0, 1],
                                [0, 0, 1, 0, 1, 0, 0, 1, 1],
                                [1, 0, 1, 1, 0, 0, 0, 0, 1],
@@ -436,7 +363,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 1, 0, 0, 1, 0, 0],
                                                                             [0, 1, 0, 0, 1, 0, 0, 1, 0],
                                                                             [1, 0, 0, 0, 1, 0, 1, 1, 0]]),
-                 30: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      30: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 1, 1, 1, 1, 1, 1, 0, 0],
                                [1, 1, 1, 1, 0, 0, 1, 1, 1],
                                [1, 1, 1, 1, 1, 1, 0, 1, 0],
@@ -453,7 +380,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 0, 0, 1, 0, 1, 1, 0],
                                                                             [1, 0, 0, 1, 1, 0, 1, 1, 0],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 32: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      32: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 1, 0, 1, 1, 1, 0, 0, 1],
                                [1, 0, 1, 0, 1, 0, 1, 1, 1],
                                [1, 1, 1, 1, 1, 0, 0, 0, 1],
@@ -470,7 +397,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 0, 1, 0, 1, 1, 0],
                                                                             [1, 0, 0, 0, 1, 0, 1, 1, 0],
                                                                             [1, 1, 0, 1, 1, 0, 1, 1, 0]]),
-                 34: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      34: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [0, 1, 0, 0, 1, 1, 0, 1, 1],
                                [0, 0, 1, 0, 1, 1, 0, 1, 1],
                                [1, 0, 1, 1, 0, 0, 1, 0, 1],
@@ -487,7 +414,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 0, 0, 0, 1, 0, 0],
                                                                             [0, 0, 0, 0, 1, 0, 0, 1, 0],
                                                                             [1, 1, 0, 1, 1, 0, 1, 1, 0]]),
-                 36: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      36: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [0, 1, 1, 1, 1, 1, 1, 0, 0],
                                [0, 1, 1, 1, 0, 0, 1, 1, 1],
                                [1, 1, 1, 1, 0, 1, 0, 1, 0],
@@ -504,7 +431,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 0, 0, 1, 0, 1, 1, 0],
                                                                             [1, 0, 0, 1, 1, 0, 1, 1, 0],
                                                                             [1, 1, 0, 1, 1, 0, 1, 1, 0]]),
-                 38: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      38: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 1, 1, 1, 1, 1, 1, 0, 1],
                                [1, 1, 1, 1, 1, 0, 1, 1, 1],
                                [1, 1, 1, 1, 1, 1, 0, 1, 1],
@@ -521,7 +448,7 @@ if __name__ == '__main__':
                                                                             [1, 1, 0, 0, 1, 0, 1, 1, 0],
                                                                             [1, 0, 0, 1, 1, 0, 1, 1, 0],
                                                                             [1, 0, 0, 0, 1, 0, 1, 1, 0]]),
-                 40: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
+                      40: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
                                [1, 1, 1, 1, 1, 1, 1, 0, 1],
                                [1, 1, 1, 1, 1, 0, 1, 1, 1],
                                [1, 1, 1, 1, 1, 1, 0, 1, 1],
@@ -538,7 +465,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 1, 0, 1, 1, 1, 1, 1],
                                                                             [1, 0, 1, 0, 1, 1, 1, 1, 1],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 42: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
+                      42: np.array([[0, 1, 1, 0, 1, 1, 0, 1, 1],
                                [1, 1, 1, 1, 1, 0, 1, 0, 1],
                                [1, 1, 1, 1, 1, 0, 1, 0, 1],
                                [1, 1, 0, 1, 1, 1, 0, 1, 1],
@@ -555,7 +482,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 0, 1, 0, 1, 1, 0],
                                                                             [1, 0, 0, 0, 1, 0, 1, 1, 0],
                                                                             [1, 1, 0, 1, 1, 0, 0, 0, 0]]),
-                 44: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      44: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 1, 1, 1, 1, 1, 0, 0, 1],
                                [1, 1, 1, 0, 1, 0, 1, 1, 1],
                                [1, 1, 1, 1, 1, 1, 0, 0, 1],
@@ -572,7 +499,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 1, 0, 0, 1, 1, 0, 1],
                                                                             [0, 0, 1, 0, 1, 1, 0, 1, 1],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 46: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      46: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 1, 1, 0, 1, 0, 1, 0, 1],
                                [1, 1, 1, 1, 1, 0, 0, 0, 1],
                                [1, 0, 0, 1, 1, 1, 0, 1, 1],
@@ -589,7 +516,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 0, 1, 1, 0, 1, 1, 0],
                                                                             [1, 1, 0, 0, 1, 0, 1, 1, 0],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 48: np.array([[0, 0, 0, 0, 1, 1, 0, 1, 1],
+                      48: np.array([[0, 0, 0, 0, 1, 1, 0, 1, 1],
                                [0, 1, 0, 0, 1, 0, 0, 1, 0],
                                [0, 0, 1, 0, 0, 1, 0, 0, 1],
                                [1, 0, 0, 1, 0, 0, 1, 0, 0],
@@ -606,7 +533,7 @@ if __name__ == '__main__':
                                                                             [1, 0, 1, 1, 0, 0, 1, 0, 1],
                                                                             [0, 1, 0, 0, 1, 1, 0, 1, 1],
                                                                             [0, 0, 0, 0, 0, 0, 0, 0, 0]]),
-                 50: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      50: np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0],
                                [1, 1, 0, 0, 1, 0, 1, 1, 0],
                                [1, 0, 1, 1, 0, 1, 0, 0, 1],
                                [1, 0, 0, 1, 1, 0, 1, 1, 0],
@@ -616,207 +543,120 @@ if __name__ == '__main__':
                                [0, 1, 1, 0, 1, 0, 0, 1, 1],
                                [0, 0, 0, 0, 0, 0, 0, 0, 0]])}
 
-    assert len(rels.keys()) == len(test_dict)
+    mapping, reverse_mapping = validation.compare_dict_values(states, adriana_states)
 
-    map = dict()  # relationship between my numbers and adriana's
-    num_matches = 0
-    for mar_key, mar_value in rels.items():
-        for middle_key, adr_value in test_dict.items():
-            if np.array_equal(mar_value, adr_value):
-                num_matches += 1
-                map.update({mar_key: middle_key})
+    adriana_edges = [(0, 5, 39), (1, 5, 41), (2, 5, 33), (3, 28, 6), (3, 5, 31), (4, 31, 12), (4, 3, 42), (4, 5, 43), (5, 0, 41),
+                     (5, 28, 14), (5, 1, 44), (5, 30, 15), (5, 31, 16), (5, 2, 30), (5, 3, 45), (5, 33, 6), (5, 4, 32),
+                     (5, 34, 49), (5, 35, 6), (5, 5, 27), (5, 36, 17), (5, 37, 6), (5, 38, 6), (5, 6, 38), (5, 7, 18),
+                     (6, 5, 38), (7, 29, 6), (7, 34, 38), (7, 5, 20), (8, 5, 40), (9, 5, 28), (11, 5, 33), (12, 5, 42),
+                     (13, 5, 35), (13, 36, 22), (14, 31, 6), (14, 3, 38), (14, 5, 46), (15, 5, 38), (16, 4, 38), (16, 5, 45),
+                     (17, 35, 6), (17, 5, 38), (18, 29, 38), (18, 34, 6), (18, 5, 24), (19, 5, 37), (20, 5, 25), (21, 5, 44),
+                     (23, 5, 32), (24, 5, 26), (25, 34, 38), (25, 5, 20), (26, 34, 6), (26, 5, 24), (27, 0, 21), (27, 28, 32),
+                     (27, 1, 1), (27, 30, 30), (27, 31, 31), (27, 2, 15), (27, 3, 3), (27, 33, 38), (27, 4, 14), (27, 34, 34),
+                     (27, 35, 38), (27, 5, 5), (27, 36, 36), (27, 37, 38), (27, 38, 38), (27, 6, 6), (27, 7, 7), (28, 31, 40),
+                     (28, 3, 8), (28, 5, 9), (29, 5, 48), (29, 7, 10), (30, 5, 6), (31, 4, 6), (31, 5, 3), (32, 31, 38),
+                     (32, 3, 6), (32, 5, 23), (33, 5, 11), (34, 5, 47), (35, 5, 13), (36, 35, 38), (36, 5, 6), (37, 5, 19),
+                     (38, 5, 6), (39, 5, 0), (40, 5, 8), (41, 5, 1), (42, 5, 12), (43, 5, 4), (44, 5, 21), (45, 28, 38),
+                     (45, 5, 16), (46, 5, 14), (47, 5, 34), (47, 7, 6), (48, 5, 29), (49, 5, 50), (50, 5, 49), (50, 7, 38)]
+
+    assert len(adriana_edges) == len(original_aut_transitions)
+
+    numbered_transitions = validation.convert_raw_transitions(original_aut_transitions, states)
+    # Converting my numbered transitions into Adriana's numbering
+    translated_transitions = validation.convert_num_transitions(numbered_transitions, mapping)
+    comparison = validation.compare_automata_transitions(translated_transitions, adriana_edges)
+    assert comparison == True
+
+    for a_edge in adriana_edges:
+        if a_edge not in translated_transitions:
+            print("OQO!!")
+            break
+
+    for mar_edge in translated_transitions:
+        if mar_edge not in adriana_edges:
+            print("OQO2!!")
+            break
+
+    mari_set = set(translated_transitions)
+    adri_set = set(adriana_edges)
+
+    assert mari_set - adri_set == set()
+    assert adri_set - mari_set == set()
+
+    # Converting Adriana's numbers into my numbers
+    reverse_translated_transitions = validation.convert_num_transitions(adriana_edges, reverse_mapping)
+    comparison = validation.compare_automata_transitions(numbered_transitions, reverse_translated_transitions)
+
+    assert comparison == True
+
+    mari_set = set(numbered_transitions)
+    adri_set = set(reverse_translated_transitions)
+
+    assert mari_set - adri_set == set()
+    assert adri_set - mari_set == set()
+
+    ####################################################################################################################
+    #                                          Constructing the Automata                                               #
+    ####################################################################################################################
+
+    start_vertex = -1  # Represents identity matrix
+    states.update({start_vertex: np.array([[1, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 1, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 1, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 1, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 1, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 1, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 1, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 1, 0],
+                               [0, 0, 0, 0, 0, 0, 0, 0, 1]])})
+    aut_alphabet = set(tiles_dict.keys())
+
+    final_states = automata_helper.get_final_states(non_3col_matrices, states)
+    assert len(final_states) == 27
+
+    start_transitions = []
+    for tile in tiles_dict.keys():
+        start_transitions.append((start_vertex, tile, tile))
+
+    mapping.update({-1: -1})
+    conv_start_trans = validation.convert_num_transitions(start_transitions, mapping)
+
+    numbered_transitions += start_transitions
+    reverse_translated_transitions += start_transitions
+    adriana_edges += conv_start_trans
+
+    conv_final_states = []
+    for final_state in final_states:
+        conv_final_states.append(mapping[final_state])
+
+    conv_alphabet = []
+    for tile in aut_alphabet:
+        conv_alphabet.append(mapping[conv_alphabet])
+    automata = dfa.DFA(
+        start=start_vertex,
+        inputs=conv_alphabet,
+        label=lambda s: automata_helper.is_final_state(s, conv_final_states),
+        transition=lambda s, c: automata_helper.get_transition(s, c, adriana_edges),
+    )
+
+    dfa_dict = dfa.dfa2dict(automata)
+    write_dot(automata, "C:\\Users\\marie\\PycharmProjects\\2cc_validation\\dfa2.dot")
+    print(dfa.dfa2dict(automata))
+
+    automata_tiles = {}
+    for key, value in tiles_dict.items():
+        for tile_name, prop_matrix in tile_prop_dict.items():
+            if np.array_equal(value, prop_matrix):
+                automata_tiles.update({key: tile_name})
                 continue
-    print("All of Marietta's prop matrices in rels found in Adriana's prop matrices in test_dict: ", num_matches == len(rels) and len(rels) == len(test_dict))
 
+    print(automata_tiles)
     f = open("rels.txt", "a")
     formatted_strings = []
-    for key, value in map.items():
+    for key, value in states.items():
         formatted_string = f"{key}:{value}"
         formatted_strings.append(formatted_string)
     string_dict = '\n'.join(formatted_strings) + '\n'
     f.write(string_dict)
     f.close()
-
-    print("***********************************************************************************************************")
-
-    # What we are hoping to achieve as automata transitions
-    test = [(0, 5, 39), (1, 5, 41), (2, 5, 33), (3, 28, 6), (3, 5, 31), (4, 31, 12), (4, 3, 42), (4, 5, 43), (5, 0, 41),
-            (5, 28, 14), (5, 1, 44), (5, 30, 15), (5, 31, 16), (5, 2, 30), (5, 3, 45), (5, 33, 6), (5, 4, 32),
-            (5, 34, 49), (5, 35, 6), (5, 5, 27), (5, 36, 17), (5, 37, 6), (5, 38, 6), (5, 6, 38), (5, 7, 18),
-            (6, 5, 38), (7, 29, 6), (7, 34, 38), (7, 5, 20), (8, 5, 40), (9, 5, 28), (11, 5, 33), (12, 5, 42),
-            (13, 5, 35), (13, 36, 22), (14, 31, 6), (14, 3, 38), (14, 5, 46), (15, 5, 38), (16, 4, 38), (16, 5, 45),
-            (17, 35, 6), (17, 5, 38), (18, 29, 38), (18, 34, 6), (18, 5, 24), (19, 5, 37), (20, 5, 25), (21, 5, 44),
-            (23, 5, 32), (24, 5, 26), (25, 34, 38), (25, 5, 20), (26, 34, 6), (26, 5, 24), (27, 0, 21), (27, 28, 32),
-            (27, 1, 1), (27, 30, 30), (27, 31, 31), (27, 2, 15), (27, 3, 3), (27, 33, 38), (27, 4, 14), (27, 34, 34),
-            (27, 35, 38), (27, 5, 5), (27, 36, 36), (27, 37, 38), (27, 38, 38), (27, 6, 6), (27, 7, 7), (28, 31, 40),
-            (28, 3, 8), (28, 5, 9), (29, 5, 48), (29, 7, 10), (30, 5, 6), (31, 4, 6), (31, 5, 3), (32, 31, 38),
-            (32, 3, 6), (32, 5, 23), (33, 5, 11), (34, 5, 47), (35, 5, 13), (36, 35, 38), (36, 5, 6), (37, 5, 19),
-            (38, 5, 6), (39, 5, 0), (40, 5, 8), (41, 5, 1), (42, 5, 12), (43, 5, 4), (44, 5, 21), (45, 28, 38),
-            (45, 5, 16), (46, 5, 14), (47, 5, 34), (47, 7, 6), (48, 5, 29), (49, 5, 50), (50, 5, 49), (50, 7, 38)]
-
-    print("Number of transitions in Adriana's automata = ", len(test))
-    print("Number of Adriana's transitions and Marietta's transitions agree: ", len(test) == len(original_aut_transitions))
-    assert len(test) == len(original_aut_transitions)
-
-
-    # Getting a new list of triples s.t. each element in the triple is a prop matrix instead of a number
-    adri_conv_aut_trans = []
-    for transition in test:
-        start_key = transition[0]
-        middle_key = transition[1]
-        end_key = transition[2]
-        adri_conv_aut_trans.append((test_dict[start_key], test_dict[middle_key], test_dict[end_key]))
-
-    matches = False
-    for triple in adri_conv_aut_trans:
-        for rec_triple in records:
-            if are_triples_equal(triple, rec_triple):
-                matches = True
-                continue
-        if matches == False:
-            break
-
-    print("Adriana's triples are in records: ", matches != False)
-
-    check = 0
-    for mari_triple in original_aut_transitions:
-        for adr_triple in adri_conv_aut_trans:
-            if are_triples_equal(mari_triple, adr_triple):
-                check += 1
-                continue
-    print("Marietta's raw automata transitions are all found in Adriana's automata transitions: ", check == len(original_aut_transitions))
-
-    check = 0
-    for mari_triple in original_aut_transitions:
-        for adr_triple in original_aut_transitions:
-            if are_triples_equal(mari_triple, adr_triple):
-                check += 1
-                continue
-
-    assert check == len(original_aut_transitions)
-
-
-    mari_num_trans = []
-    for transition in original_aut_transitions:
-        mari_num_trans.append((get_key(rels, transition[0]), get_key(rels, transition[1]), get_key(rels, transition[2])))
-
-    conv_aut_trans = []
-    for transition in mari_num_trans:
-        conv_aut_trans.append((map[transition[0]], map[transition[1]], map[transition[2]]))
-
-    mari_aut_set = set(conv_aut_trans)
-    adri_aut_set = set(test)
-
-    print("Are Marietta's transitions the same as Adriana's after Marietta's numbers are converted to Adriana's? ", mari_aut_set == adri_aut_set)
-
-    mari_num_trans_test = set(mari_num_trans)
-    og_num_trans = set(aut_transitions)
-
-
-    assert mari_num_trans_test == og_num_trans
-    assert set(conv_aut_trans) == adri_aut_set
-
-
-    new_aut_transitions = []
-    for triple in aut_transitions:
-        new_aut_transitions.append((map[triple[0]], map[triple[1]], map[triple[2]]))
-
-    sanity_check = 0
-    for triple in new_aut_transitions:
-        for adri_triple in test:
-            if are_triples_equal(triple, adri_triple):
-                sanity_check += 1
-                continue
-
-    assert sanity_check == len(aut_transitions)
-    print("***********************************************************************************************************")
-
-    start_vertex = len(rels.keys()) + 1  # Represents identity matrix
-    rels.update({start_vertex: np.identity(9)})  # Adding the identity matrix at the end of dict
-    aut_alph = set(tiles_dict.keys())  # Tiles as numbers from the dictionary
-
-    four_chrom_num = []
-    for array in result_non_col:
-        for mar_key, mar_value in rels.items():
-            if np.array_equal(mar_value, array):
-                four_chrom_num.append(mar_key)
-                continue
-
-    print("Number of final states = ", len(four_chrom_num))
-    assert len(four_chrom_num) == 27
-    print("***********************************************************************************************************")
-
-    start_transitions = []
-    for tile in tiles_dict.keys():
-        start_transitions.append((start_vertex, tile, tile))
-    # aut_transitions.append((start_vertex, tile, tile))
-    print(start_transitions)
-    aut_transitions += start_transitions
-    mari_num_trans += start_transitions
-    conv_aut_trans += start_transitions
-
-
-    sink_state = 100
-    print(mari_num_trans)
-    print(conv_aut_trans)
-
-    automata = dfa.DFA(
-        start=start_vertex,
-        inputs=aut_alph,
-        label=lambda s: is_final_state(s, four_chrom_num),
-        transition=lambda s, c: get_transition(s, c, mari_num_trans),
-    )
-
-    dfa_dict = dfa.dfa2dict(automata)
-    # min_dfa = automata.minimize()
-    print(dfa.dfa2dict(automata))
-
-    print("Which numbers represent tiles?")
-    # print(tiles_dict.keys())
-    # tile - tile name map
-    tile_map = dict()
-    for mar_key, matrix in tiles_dict.items():
-        for i in range(0, len(prop_matrices)):
-            if np.array_equal(matrix, prop_matrices[i]):
-                tile_map.update({mar_key: tile_types[i]})
-
-    print(tile_map)
-
-
-    # automata_min_dict = ({0: (False, {2: 11, 36: 5, 38: 1, 8: 6, 17: 6, 19: 10, 22: 6, 24: 6, 26: 9, 31: 8}), 1: (False, {2: 4, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 2}), 2: (False, {2: 3, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 0}), 3: (True, {2: 2, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 0}), 4: (False, {2: 0, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 0}), 5: (True, {2: 6, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 0}), 6: (False, {2: 7, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 0}), 7: (True, {2: 0, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 0}), 8: (True, {2: 7, 36: 0, 38: 2, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 3, 31: 0}), 9: (False, {2: 4, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 7}), 10: (True, {2: 4, 36: 0, 38: 0, 8: 0, 17: 0, 19: 0, 22: 0, 24: 0, 26: 0, 31: 0}), 11: (True, {2: 4, 36: 2, 38: 4, 8: 3, 17: 7, 19: 4, 22: 3, 24: 3, 26: 4, 31: 7})}, 0)
-
-    """
-    automata = dfacopy.DFA(
-        start= start vertex,
-        inputs= alphabet,
-        label= lambda s: f(s)   where f(s) returns true iff s is a final state,
-        transition=lambda s, c: function_to_get_trans(s,c),
-    )
-    """
-    ### USING ANOTHER LIBRARY FOR DFA MINIMISATION ###
-    # state_numbers = list(rels.keys())
-    # states_list = [str(i) for i in state_numbers]
-    # print(states_list)
-    # input_symbols_list = [str(i) for i in tiles_dict.keys()]
-    # final_states_list = [str(i) for i in four_chrom_num]
-    # print(input_symbols_list)
-    # print(final_states_list)
-    # # Convert the dictionary
-    # new_dfa_dict = {}
-    # for key, (is_final, transition_dict) in dfa_dict[0].items():
-    #     new_transition_dict = {}
-    #     for key1, val1 in transition_dict.items():
-    #         new_transition_dict[str(key1)] = str(val1)
-    #     # Store only the inner dictionary (the second element of the tuple)
-    #     new_dfa_dict[str(key)] = new_transition_dict
-    # print(new_dfa_dict)
-    # my_dfa = DFA(
-    #     states=states_list,
-    #     input_symbols=input_symbols_list,
-    #     transitions=new_dfa_dict,
-    #     initial_state=str(start_vertex),
-    #     final_states=final_states_list
-    # )
-    #
-    # my_dfa = my_dfa.minify()
-    # print(my_dfa)
+    print(final_states)
